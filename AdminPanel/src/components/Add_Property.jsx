@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import imageCompression from 'browser-image-compression';
 import Toast from './Toast';
@@ -8,7 +8,7 @@ const Add_Property = () => {
   const [loading, setLoading] = useState(false);
   const [property, setProperty] = useState({
     name: '', location: '', category: 'residential', type: '',
-    price_text: '', area_sqft: '', description: ''
+    price_text: '', area_sqft: '', developer: '', availableOption: '', description: ''
   });
   const [features, setFeatures] = useState([]);
   const [currentFeature, setCurrentFeature] = useState('');
@@ -20,15 +20,32 @@ const Add_Property = () => {
     setToast({ show: true, message, type });
   };
 
+  useEffect(() => {
+    // Cleanup function
+    return () => {
+      files.forEach(fileObj => URL.revokeObjectURL(fileObj.preview));
+    };
+  }, [files]);
+
   const handleFileSelection = async (e) => {
     const selectedFiles = Array.from(e.target.files);
     const options = { maxSizeMB: 0.8, maxWidthOrHeight: 1200, useWebWorker: true };
     setLoading(true);
+
     try {
-      const compressedFiles = await Promise.all(
-        selectedFiles.map(file => imageCompression(file, options))
+      const processedFiles = await Promise.all(
+        selectedFiles.map(async (file) => {
+          const compressed = await imageCompression(file, options);
+          return {
+            file: compressed,
+            preview: URL.createObjectURL(compressed) // Generate URL once here
+          };
+        })
       );
-      setFiles(compressedFiles);
+
+      // If you want to append to existing files instead of replacing:
+      // setFiles(prev => [...prev, ...processedFiles]);
+      setFiles(processedFiles);
     } catch (error) {
       showToast("Image error", "error");
     } finally {
@@ -47,30 +64,70 @@ const Add_Property = () => {
     setFeatures(features.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    const formData = new FormData();
-    Object.keys(property).forEach(key => formData.append(key, property[key]));
-    features.forEach(f => formData.append('features[]', f));
-    files.forEach(file => formData.append('images[]', file));
-    formData.append('main_index', mainIndex);
+  const removeImage = (e, index) => {
+    e.stopPropagation(); // Prevents setting this image as "Main" when deleting
 
-    try {
-      const res = await fetch('https://sevokerealty.in/api.php?type=add_property', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (data.success) {
-        showToast("Property Added Successfully!", "success");
-        setTimeout(() => navigate('/dashboard'), 1500);
-      } else {
-        showToast(data.error || "Upload failed", "error");
+    setFiles((prev) => {
+      // 1. Revoke the URL to prevent memory leaks
+      URL.revokeObjectURL(prev[index].preview);
+
+      // 2. Filter out the deleted image
+      const newFiles = prev.filter((_, i) => i !== index);
+
+      // 3. Adjust mainIndex so it doesn't point to an empty index
+      if (mainIndex === index) {
+        setMainIndex(0);
+      } else if (mainIndex > index) {
+        setMainIndex(mainIndex - 1);
       }
-    } catch (err) {
-      showToast("Server error", "error");
-    } finally {
-      setLoading(false);
-    }
+
+      return newFiles;
+    });
   };
+
+  const handleSubmit = async (e) => {
+  e.preventDefault();
+  if (files.length === 0) {
+    showToast("Please upload at least one image", "error");
+    return;
+  }
+
+  setLoading(true);
+  const formData = new FormData();
+
+  // Append text fields
+  Object.keys(property).forEach(key => formData.append(key, property[key]));
+  
+  // Append features
+  features.forEach(f => formData.append('features[]', f));
+
+  // Append images correctly
+  files.forEach((fileObj) => {
+    formData.append('images[]', fileObj.file);
+  });
+
+  // CRITICAL: Ensure main_index is sent so PHP knows which one is 'is_main'
+  formData.append('main_index', mainIndex);
+  console.log("Files being sent:", formData.getAll('images[]'));
+  console.log("Main Index index:", formData.get('main_index'));
+  try {
+    const res = await fetch('https://sevokerealty.in/api.php?type=add_property', { 
+      method: 'POST', 
+      body: formData 
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast("Property Added Successfully!", "success");
+      setTimeout(() => navigate('/dashboard'), 1500);
+    } else {
+      showToast(data.error || "Upload failed", "error");
+    }
+  } catch (err) {
+    showToast("Server error", "error");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="bg-gray-100 min-h-screen w-full pb-10">
@@ -114,6 +171,8 @@ const Add_Property = () => {
             <input className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200" placeholder="Type (e.g. resell/fresh)" value={property.type} onChange={e => setProperty({ ...property, type: e.target.value })} />
             <input className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200" placeholder="Price (e.g. ₹50L)" value={property.price_text} onChange={e => setProperty({ ...property, price_text: e.target.value })} />
             <input className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200" type="number" placeholder="Area (sqft)" value={property.area_sqft} onChange={e => setProperty({ ...property, area_sqft: e.target.value })} />
+            <input className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200" placeholder="Developer name" value={property.developer} onChange={e => setProperty({ ...property, developer: e.target.value })} />
+            <input className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200" placeholder="Available options (eg 2bhk/3bhk)" value={property.availableOption} onChange={e => setProperty({ ...property, availableOption: e.target.value })} />
             <textarea className="md:col-span-2 bg-gray-50 p-4 rounded-2xl h-32 border-none ring-1 ring-gray-200 focus:ring-2 ring-blue-500 outline-none" placeholder="Description" value={property.description} onChange={e => setProperty({ ...property, description: e.target.value })} />
 
             <div className="md:col-span-2 bg-blue-50/50 p-6 rounded-3xl border-2 border-dashed border-blue-200">
@@ -132,21 +191,26 @@ const Add_Property = () => {
               />
 
               <div className="flex gap-4 overflow-x-auto pb-4 px-2 custom-scrollbar">
-                {files.map((file, idx) => (
+                {files.map((fileData, idx) => (
                   <div
                     key={idx}
                     onClick={() => setMainIndex(idx)}
                     className={`relative shrink-0 cursor-pointer w-28 h-28 rounded-2xl overflow-hidden border-4 transition-all duration-300 
-          ${mainIndex === idx
-                        ? 'border-blue-600 scale-105 shadow-2xl z-10'
-                        : 'border-white opacity-60 hover:opacity-100 hover:border-blue-200'
-                      }`}
+      ${mainIndex === idx ? 'border-blue-600 scale-105' : 'border-white opacity-60'}`}
                   >
                     <img
-                      src={URL.createObjectURL(file)}
+                      src={fileData.preview} // ...so that this 'fileData' now exists!
                       className="w-full h-full object-cover"
-                      alt="preview"
+                      alt={`preview-${idx}`}
                     />
+
+                    {/* The rest of your delete button and badges */}
+                    <button
+                      onClick={(e) => removeImage(e, idx)}
+                      className="absolute top-1 right-1 z-20 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-md hover:bg-red-600 transition-colors"
+                    >
+                      ✕
+                    </button>
 
                     {/* Visual Badge for Main Image */}
                     {mainIndex === idx && (
