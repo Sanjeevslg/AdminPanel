@@ -3,51 +3,51 @@ import { useNavigate } from 'react-router-dom';
 import imageCompression from 'browser-image-compression';
 import Toast from './Toast';
 
+const API = 'https://sevokerealty.in/index.php';
+
 const Add_Property = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+
+  // Field names now match the DB schema: subcategory (was developer), listing_type (was availableOption)
   const [property, setProperty] = useState({
-    name: '', location: '', category: 'residential', type: '',
-    price_text: '', area_sqft: '', developer: '', availableOption: '', description: ''
+    name: '',
+    location: '',
+    category: 'residential',
+    type: '',
+    price_text: '',
+    area_sqft: '',
+    subcategory: '',       // was: developer
+    listing_type: '',      // was: availableOption
+    description: '',
   });
+
   const [features, setFeatures] = useState([]);
   const [currentFeature, setCurrentFeature] = useState('');
   const [files, setFiles] = useState([]);
   const [mainIndex, setMainIndex] = useState(0);
   const [toast, setToast] = useState({ show: false, message: '', type: '' });
 
-  const showToast = (message, type) => {
-    setToast({ show: true, message, type });
-  };
+  const showToast = (message, type) => setToast({ show: true, message, type });
 
   useEffect(() => {
-    // Cleanup function
-    return () => {
-      files.forEach(fileObj => URL.revokeObjectURL(fileObj.preview));
-    };
+    return () => { files.forEach(f => URL.revokeObjectURL(f.preview)); };
   }, [files]);
 
   const handleFileSelection = async (e) => {
     const selectedFiles = Array.from(e.target.files);
     const options = { maxSizeMB: 0.8, maxWidthOrHeight: 1200, useWebWorker: true };
     setLoading(true);
-
     try {
-      const processedFiles = await Promise.all(
+      const processed = await Promise.all(
         selectedFiles.map(async (file) => {
           const compressed = await imageCompression(file, options);
-          return {
-            file: compressed,
-            preview: URL.createObjectURL(compressed) // Generate URL once here
-          };
+          return { file: compressed, preview: URL.createObjectURL(compressed) };
         })
       );
-
-      // If you want to append to existing files instead of replacing:
-      // setFiles(prev => [...prev, ...processedFiles]);
-      setFiles(processedFiles);
-    } catch (error) {
-      showToast("Image error", "error");
+      setFiles(processed);
+    } catch {
+      showToast('Image compression failed', 'error');
     } finally {
       setLoading(false);
     }
@@ -60,74 +60,66 @@ const Add_Property = () => {
     }
   };
 
-  const removeFeature = (index) => {
-    setFeatures(features.filter((_, i) => i !== index));
-  };
+  const removeFeature = (index) => setFeatures(features.filter((_, i) => i !== index));
 
   const removeImage = (e, index) => {
-    e.stopPropagation(); // Prevents setting this image as "Main" when deleting
-
-    setFiles((prev) => {
-      // 1. Revoke the URL to prevent memory leaks
+    e.stopPropagation();
+    setFiles(prev => {
       URL.revokeObjectURL(prev[index].preview);
-
-      // 2. Filter out the deleted image
-      const newFiles = prev.filter((_, i) => i !== index);
-
-      // 3. Adjust mainIndex so it doesn't point to an empty index
-      if (mainIndex === index) {
-        setMainIndex(0);
-      } else if (mainIndex > index) {
-        setMainIndex(mainIndex - 1);
-      }
-
-      return newFiles;
+      const next = prev.filter((_, i) => i !== index);
+      if (mainIndex === index) setMainIndex(0);
+      else if (mainIndex > index) setMainIndex(mainIndex - 1);
+      return next;
     });
+  };
+
+  const resetForm = () => {
+    setProperty({ name: '', location: '', category: 'residential', type: '', price_text: '', area_sqft: '', subcategory: '', listing_type: '', description: '' });
+    setFeatures([]);
+    files.forEach(f => URL.revokeObjectURL(f.preview));
+    setFiles([]);
+    setMainIndex(0);
   };
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (files.length === 0) {
-    showToast("Please upload at least one image", "error");
-    return;
-  }
+    e.preventDefault();
+    if (files.length === 0) return showToast('Please upload at least one image', 'error');
 
-  setLoading(true);
-  const formData = new FormData();
+    setLoading(true);
+    const formData = new FormData();
 
-  // Append text fields
-  Object.keys(property).forEach(key => formData.append(key, property[key]));
-  
-  // Append features
-  features.forEach(f => formData.append('features[]', f));
+    // All keys now match the backend's expected field names
+    Object.keys(property).forEach(key => formData.append(key, property[key]));
+    features.forEach(f => formData.append('features[]', f));
+    files.forEach(f => formData.append('images[]', f.file));
+    formData.append('main_index', mainIndex);
 
-  // Append images correctly
-  files.forEach((fileObj) => {
-    formData.append('images[]', fileObj.file);
-  });
-
-  // CRITICAL: Ensure main_index is sent so PHP knows which one is 'is_main'
-  formData.append('main_index', mainIndex);
-  console.log("Files being sent:", formData.getAll('images[]'));
-  console.log("Main Index index:", formData.get('main_index'));
-  try {
-    const res = await fetch('https://sevokerealty.in/api.php?type=add_property', { 
-      method: 'POST', 
-      body: formData 
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast("Property Added Successfully!", "success");
-      setTimeout(() => navigate('/dashboard'), 1500);
-    } else {
-      showToast(data.error || "Upload failed", "error");
+    try {
+      const res = await fetch(`${API}?type=add_property`, { method: 'POST', body: formData });
+      const rawResponse = await res.text();
+      try {
+        const data = JSON.parse(rawResponse);
+        if (data.success) {
+          showToast('Property Added Successfully!', 'success');
+          resetForm();
+          setTimeout(() => navigate('/dashboard'), 1500);
+        } else {
+          showToast(data.error || 'Upload failed', 'error');
+        }
+      } catch {
+        console.error('Server sent invalid JSON:', rawResponse);
+        showToast('Property added, but server response was unexpected.', 'error');
+        setTimeout(() => navigate('/dashboard'), 2000);
+      }
+    } catch {
+      showToast('Connection error', 'error');
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    showToast("Server error", "error");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
+
+  const set = (field) => (e) => setProperty({ ...property, [field]: e.target.value });
+  const inputCls = 'bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200 focus:ring-2 focus:ring-blue-500 outline-none';
 
   return (
     <div className="bg-gray-100 min-h-screen w-full pb-10">
@@ -146,82 +138,82 @@ const Add_Property = () => {
       <div className="p-4 md:p-8 w-full max-w-5xl mx-auto">
         <div className="bg-white p-6 md:p-10 rounded-3xl shadow-xl animate-in slide-in-from-top duration-500">
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-            <input className="border-none bg-gray-50 p-4 rounded-2xl ring-1 ring-gray-200 focus:ring-2 ring-blue-500 outline-none" placeholder="Property Name" value={property.name} onChange={e => setProperty({ ...property, name: e.target.value })} required />
-            <input className="border-none bg-gray-50 p-4 rounded-2xl ring-1 ring-gray-200 focus:ring-2 ring-blue-500 outline-none" placeholder="Location" value={property.location} onChange={e => setProperty({ ...property, location: e.target.value })} required />
 
+            <input className={inputCls} placeholder="Property Name" value={property.name} onChange={set('name')} required />
+            <input className={inputCls} placeholder="Location" value={property.location} onChange={set('location')} required />
+
+            {/* Features */}
             <div className="md:col-span-2 border-t pt-4">
               <label className="block mb-2 font-black text-[10px] uppercase text-gray-400 ml-1">Key Features</label>
               <div className="flex-wrap md:flex gap-2">
-                <input className="flex-1 bg-gray-50 p-3 rounded-2xl outline-none ring-1 ring-gray-200 focus:ring-2 ring-blue-500" placeholder="e.g. Near Market" value={currentFeature} onChange={e => setCurrentFeature(e.target.value)} />
+                <input
+                  className="flex-1 bg-gray-50 p-3 rounded-2xl outline-none ring-1 ring-gray-200 focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Near Market"
+                  value={currentFeature}
+                  onChange={e => setCurrentFeature(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addFeature())}
+                />
                 <button type="button" onClick={addFeature} className="bg-blue-600 text-white px-6 rounded-2xl font-bold mt-2">Add</button>
               </div>
               <div className="flex flex-wrap gap-2 mt-3">
                 {features.map((f, i) => (
                   <span key={i} className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full text-xs font-bold flex items-center shadow-sm border border-blue-100">
-                    {f} <button type="button" onClick={() => removeFeature(i)} className="ml-2 text-red-400 hover:text-red-600 text-lg">&times;</button>
+                    {f}
+                    <button type="button" onClick={() => removeFeature(i)} className="ml-2 text-red-400 hover:text-red-600 text-lg">&times;</button>
                   </span>
                 ))}
               </div>
             </div>
 
-            <select className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200 focus:ring-2 ring-blue-500 outline-none" value={property.category} onChange={e => setProperty({ ...property, category: e.target.value })}>
+            <select className={inputCls} value={property.category} onChange={set('category')}>
               <option value="residential">Residential</option>
               <option value="commercial">Commercial</option>
             </select>
-            <input className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200" placeholder="Type (e.g. resell/fresh)" value={property.type} onChange={e => setProperty({ ...property, type: e.target.value })} />
-            <input className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200" placeholder="Price (e.g. ₹50L)" value={property.price_text} onChange={e => setProperty({ ...property, price_text: e.target.value })} />
-            <input className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200" type="number" placeholder="Area (sqft)" value={property.area_sqft} onChange={e => setProperty({ ...property, area_sqft: e.target.value })} />
-            <input className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200" placeholder="Developer name" value={property.developer} onChange={e => setProperty({ ...property, developer: e.target.value })} />
-            <input className="bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200" placeholder="Available options (eg 2bhk/3bhk)" value={property.availableOption} onChange={e => setProperty({ ...property, availableOption: e.target.value })} />
-            <textarea className="md:col-span-2 bg-gray-50 p-4 rounded-2xl h-32 border-none ring-1 ring-gray-200 focus:ring-2 ring-blue-500 outline-none" placeholder="Description" value={property.description} onChange={e => setProperty({ ...property, description: e.target.value })} />
+            <input className={inputCls} placeholder="Type (e.g. resell / fresh)" value={property.type} onChange={set('type')} />
+            <input className={inputCls} placeholder="Price (e.g. ₹50L)" value={property.price_text} onChange={set('price_text')} />
+            <input className={inputCls} type="number" placeholder="Area (sqft)" value={property.area_sqft} onChange={set('area_sqft')} />
 
+            {/* subcategory — previously "developer" */}
+            <input className={inputCls} placeholder="Subcategory / Developer name" value={property.subcategory} onChange={set('subcategory')} />
+
+            {/* listing_type — previously "availableOption" */}
+            <input className={inputCls} placeholder="Listing type (e.g. 2BHK / 3BHK)" value={property.listing_type} onChange={set('listing_type')} />
+
+            <textarea className={`md:col-span-2 h-32 ${inputCls}`} placeholder="Description" value={property.description} onChange={set('description')} />
+
+            {/* Image upload */}
             <div className="md:col-span-2 bg-blue-50/50 p-6 rounded-3xl border-2 border-dashed border-blue-200">
               <div className="text-center mb-4">
                 <label className="block font-black text-blue-900 uppercase tracking-widest text-xs">Upload Images</label>
-                <p className="text-[10px] text-blue-500 font-bold mt-1 uppercase italic">
-                  Please click on an image to select it as the MAIN image
-                </p>
+                <p className="text-[10px] text-blue-500 font-bold mt-1 uppercase italic">Click an image to set it as the MAIN image</p>
               </div>
-
               <input
                 type="file"
                 multiple
+                accept="image/*"
                 onChange={handleFileSelection}
                 className="mb-6 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-blue-600 file:text-white cursor-pointer"
               />
-
-              <div className="flex gap-4 overflow-x-auto pb-4 px-2 custom-scrollbar">
+              <div className="flex gap-4 overflow-x-auto pb-4 px-2">
                 {files.map((fileData, idx) => (
                   <div
                     key={idx}
                     onClick={() => setMainIndex(idx)}
-                    className={`relative shrink-0 cursor-pointer w-28 h-28 rounded-2xl overflow-hidden border-4 transition-all duration-300 
-      ${mainIndex === idx ? 'border-blue-600 scale-105' : 'border-white opacity-60'}`}
+                    className={`relative shrink-0 cursor-pointer w-28 h-28 rounded-2xl overflow-hidden border-4 transition-all duration-300
+                      ${mainIndex === idx ? 'border-blue-600 scale-105' : 'border-white opacity-60'}`}
                   >
-                    <img
-                      src={fileData.preview} // ...so that this 'fileData' now exists!
-                      className="w-full h-full object-cover"
-                      alt={`preview-${idx}`}
-                    />
-
-                    {/* The rest of your delete button and badges */}
+                    <img src={fileData.preview} className="w-full h-full object-cover" alt={`preview-${idx}`} />
                     <button
                       onClick={(e) => removeImage(e, idx)}
                       className="absolute top-1 right-1 z-20 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-md hover:bg-red-600 transition-colors"
-                    >
-                      ✕
-                    </button>
-
-                    {/* Visual Badge for Main Image */}
+                    >✕</button>
                     {mainIndex === idx && (
                       <div className="absolute inset-0 bg-blue-600/20 flex items-center justify-center">
                         <div className="bg-blue-600 text-white text-[10px] font-black px-2 py-1 rounded-lg shadow-lg uppercase tracking-tighter flex items-center gap-1">
-                          <span>★</span> Main Image
+                          <span>★</span> Main
                         </div>
                       </div>
                     )}
-
-                    {/* Small selection ring for non-selected images on hover */}
                     {mainIndex !== idx && (
                       <div className="absolute inset-0 bg-black/5 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
                         <span className="text-white text-xs font-bold bg-black/20 px-2 py-1 rounded-lg">Set Main</span>
@@ -232,8 +224,12 @@ const Add_Property = () => {
               </div>
             </div>
 
-            <button disabled={loading} type="submit" className="md:col-span-2 bg-green-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:bg-green-700 transition-all active:scale-95">
-              {loading ? "PROCESSING..." : "PUBLISH PROPERTY"}
+            <button
+              disabled={loading}
+              type="submit"
+              className="md:col-span-2 bg-green-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:bg-green-700 transition-all active:scale-95 disabled:opacity-60"
+            >
+              {loading ? 'PROCESSING...' : 'PUBLISH PROPERTY'}
             </button>
           </form>
         </div>
