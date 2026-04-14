@@ -2,8 +2,42 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import imageCompression from 'browser-image-compression';
 import Toast from './Toast';
+import { API_URL as API } from '../config/api';
 
-const API = 'https://sevokerealty.in/index.php';
+const PROPERTY_CATEGORIES = {
+  residential: [
+    { label: 'Flats', value: 'flats', children: [
+      { label: '2 BHK', value: '2-bhk' },
+      { label: '3 BHK', value: '3-bhk' },
+      { label: '4 BHK', value: '4-bhk' },
+    ] },
+    { label: 'Bungalows', value: 'bungalows', children: [
+      { label: 'Villa', value: 'villa' },
+      { label: 'Outhouse', value: 'outhouse' },
+      { label: 'Farmhouse', value: 'farmhouse' },
+      { label: 'Independent Land/Building', value: 'independent-land-building' },
+    ] },
+  ],
+  commercial: [
+    { label: 'Shops', value: 'shops', children: [] },
+    { label: 'Offices', value: 'offices', children: [] },
+    { label: 'Warehouse', value: 'warehouse', children: [] },
+    { label: 'Showrooms', value: 'showrooms', children: [] },
+  ],
+  land: [
+    { label: 'Residential Land', value: 'residential-land', children: [
+      { label: 'Residential Plots', value: 'residential-plots' },
+      { label: 'Independent Plot', value: 'independent-plot' },
+      { label: 'Gated Community', value: 'gated-community' },
+    ] },
+    { label: 'Commercial Land', value: 'commercial-land', children: [
+      { label: 'Commercial Plot', value: 'commercial-plot' },
+      { label: 'Independent Plot', value: 'independent-plot' },
+      { label: 'ROI', value: 'roi' },
+      { label: 'Land for Investment', value: 'land-for-investment' },
+    ] },
+  ],
+};
 
 const Add_Property = () => {
   const navigate = useNavigate();
@@ -119,6 +153,30 @@ const Add_Property = () => {
   };
 
   const set = (field) => (e) => setProperty({ ...property, [field]: e.target.value });
+
+  const categoryOptions = Object.keys(PROPERTY_CATEGORIES);
+  const subcategoryOptions = PROPERTY_CATEGORIES[property.category] ?? [];
+  const typeOptions =
+    subcategoryOptions.find((s) => s.value === property.subcategory)?.children ?? [];
+
+  const setCategory = (e) => {
+    const nextCategory = e.target.value;
+    setProperty((prev) => ({
+      ...prev,
+      category: nextCategory,
+      subcategory: '',
+      type: '',
+    }));
+  };
+
+  const setSubcategory = (e) => {
+    const nextSubcategory = e.target.value;
+    setProperty((prev) => ({
+      ...prev,
+      subcategory: nextSubcategory,
+      type: '',
+    }));
+  };
   const inputCls = 'bg-gray-50 p-4 rounded-2xl border-none ring-1 ring-gray-200 focus:ring-2 focus:ring-blue-500 outline-none';
 
   return (
@@ -165,19 +223,50 @@ const Add_Property = () => {
               </div>
             </div>
 
-            <select className={inputCls} value={property.category} onChange={set('category')}>
-              <option value="residential">Residential</option>
-              <option value="commercial">Commercial</option>
+            {/* Category -> Subcategory -> Type */}
+            <select className={inputCls} value={property.category} onChange={setCategory}>
+              {categoryOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c.charAt(0).toUpperCase() + c.slice(1)}
+                </option>
+              ))}
             </select>
-            <input className={inputCls} placeholder="Type (e.g. resell / fresh)" value={property.type} onChange={set('type')} />
+
+            <select className={inputCls} value={property.subcategory} onChange={setSubcategory} required>
+              <option value="" disabled>Select subcategory</option>
+              {subcategoryOptions.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className={inputCls}
+              value={property.type}
+              onChange={set('type')}
+              disabled={!property.subcategory || typeOptions.length === 0}
+            >
+              <option value="">
+                {typeOptions.length === 0 ? 'No type options' : 'Select type'}
+              </option>
+              {typeOptions.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+
+            {/* listing_type maps to fresh/resell */}
+            <select className={inputCls} value={property.listing_type} onChange={set('listing_type')} required>
+              <option value="" disabled>Select listing type</option>
+              <option value="fresh">Fresh</option>
+              <option value="resell">Resell</option>
+            </select>
             <input className={inputCls} placeholder="Price (e.g. ₹50L)" value={property.price_text} onChange={set('price_text')} />
-            <input className={inputCls} type="number" placeholder="Area (sqft)" value={property.area_sqft} onChange={set('area_sqft')} />
+            <input className={inputCls} placeholder="Area (sqft)" value={property.area_sqft} onChange={set('area_sqft')} />
 
-            {/* subcategory — previously "developer" */}
-            <input className={inputCls} placeholder="Subcategory / Developer name" value={property.subcategory} onChange={set('subcategory')} />
-
-            {/* listing_type — previously "availableOption" */}
-            <input className={inputCls} placeholder="Listing type (e.g. 2BHK / 3BHK)" value={property.listing_type} onChange={set('listing_type')} />
+            {/* (subcategory/type/listing_type are now dropdowns above) */}
 
             <textarea className={`md:col-span-2 h-32 ${inputCls}`} placeholder="Description" value={property.description} onChange={set('description')} />
 

@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import imageCompression from 'browser-image-compression';
 import Toast from './Toast';
-
-const API = 'https://sevokerealty.in/index.php';
+import { API_URL as API } from '../config/api';
 
 const Add_Project = () => {
   const navigate = useNavigate();

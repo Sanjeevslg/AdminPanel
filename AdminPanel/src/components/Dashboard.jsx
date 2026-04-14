@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Toast from './Toast';
-
-const API = 'https://sevokerealty.in/index.php';
+import { API_URL as API } from '../config/api';
 
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState('properties'); // 'properties' | 'projects'

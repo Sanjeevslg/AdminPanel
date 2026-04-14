@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API_URL } from '../config/api';
 
 const Login = () => {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
@@ -14,7 +15,7 @@ const Login = () => {
     formData.append('password', credentials.password);
 
     try {
-      const res = await fetch('https://sevokerealty.in/index.php?type=login', {
+      const res = await fetch(`${API_URL}?type=login`, {
         method: 'POST',
         body: formData,
       });

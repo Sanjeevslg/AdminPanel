@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Add_Property from './components/Add_Property';
-import Add_Project from './components/Add_Project';
+import Add_Project from './components/Add_project.jsx';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const App = () => {
